@@ -1,0 +1,246 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* MG Real Estate — Design Tokens
+   Paleta derivada de la luz de Mendoza en las fotos: ocres de golden hour,
+   verde oliva/bosque profundo y blancos cálidos. */
+@theme inline {
+  /* Fonts */
+  --font-sans: var(--font-plus-jakarta);
+  --font-mono: var(--font-space-mono);
+  --font-heading: var(--font-space-grotesk);
+  --font-display: var(--font-newsreader);
+
+  /* Bronce (primario) */
+  --color-gold: #8A6529;        /* 5.3:1 sobre blanco, 4.8:1 sobre crema (AA) */
+  --color-gold-dark: #6E4F1F;
+  --color-gold-light: #D9BC85;  /* acentos sobre fondos oscuros */
+  --color-gold-bg: #F6EEDD;
+  --color-champagne: #E8D5A8;
+
+  /* Verde bosque (superficies oscuras) */
+  --color-forest: #16201B;
+  --color-forest-2: #1F2C26;
+  --color-forest-3: #283932;
+
+  /* Text */
+  --color-text-primary: #1F2421;
+  --color-text-secondary: #565B56;
+  --color-text-muted: #676B63;
+  --color-text-dim: #A3A69C;
+
+  /* App backgrounds */
+  --color-app-bg: #F6F3EC;
+  --color-app-bg-tint: #FAF6EC;
+
+  /* Borders */
+  --color-border-light: #E9E4D8;
+  --color-border-mid: #DFD8C8;
+  --color-border-strong: #E4DED0;
+
+  /* States */
+  --color-success: #1F9D5B;
+  --color-success-bg: #EAF7F0;
+  --color-warning: #E0A93B;
+  --color-warning-bg: #FBF3E2;
+  --color-danger: #C0506A;
+  --color-danger-bg: #FBECEF;
+  --color-info: #3B82C4;
+  --color-info-bg: #EAF0FB;
+
+  /* WhatsApp */
+  --color-whatsapp: #25D366;
+
+  /* ShadCN mappings */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Radii */
+  --radius-sm: 0.5625rem;
+  --radius-md: 0.6875rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.125rem;
+  --radius-pill: 1.25rem;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root {
+  --background: #FFFFFF;
+  --foreground: #1F2421;
+  --card: #FFFFFF;
+  --card-foreground: #1F2421;
+  --popover: #FFFFFF;
+  --popover-foreground: #1F2421;
+  --primary: #8A6529;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F6F3EC;
+  --secondary-foreground: #1F2421;
+  --muted: #F6F3EC;
+  --muted-foreground: #676B63;
+  --accent: #F6EEDD;
+  --accent-foreground: #6E4F1F;
+  --destructive: #C0506A;
+  --border: #E9E4D8;
+  --input: #E9E4D8;
+  --ring: #8A6529;
+  --radius: 0.875rem;
+
+  /* Sidebar */
+  --sidebar: #16201B;
+  --sidebar-foreground: #F6F3EC;
+  --sidebar-primary: #8A6529;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1F2C26;
+  --sidebar-accent-foreground: #F6F3EC;
+  --sidebar-border: rgba(255,255,255,0.06);
+  --sidebar-ring: #8A6529;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-[#F6F3EC] text-[#1F2421] font-sans antialiased;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-space-grotesk), var(--font-plus-jakarta), sans-serif;
+  }
+  ::selection {
+    background: #D9BC85;
+    color: #16201B;
+  }
+}
+
+@layer utilities {
+  .shadow-card {
+    box-shadow: 0 8px 22px rgba(30, 36, 28, 0.06);
+  }
+  .shadow-modal {
+    box-shadow: 0 24px 60px rgba(15, 22, 18, 0.32);
+  }
+  .shadow-elevated {
+    box-shadow: 0 16px 40px rgba(15, 22, 18, 0.2);
+  }
+  /* Titulares del sitio público: serif editorial */
+  .font-display {
+    font-family: var(--font-newsreader), Georgia, serif;
+    font-optical-sizing: auto;
+    letter-spacing: -0.015em;
+  }
+  /* Vidrio esmerilado sobre fondos oscuros */
+  .glass {
+    background: rgba(246, 243, 236, 0.1);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border: 1px solid rgba(232, 213, 168, 0.22);
+  }
+  .text-gold-gradient {
+    background: linear-gradient(100deg, #E8D5A8 0%, #D9BC85 45%, #B8934F 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* ---- Animaciones del sitio ---- */
+@keyframes mg-rise {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes mg-word {
+  from { opacity: 0; transform: translateY(0.6em) rotate(1.5deg); filter: blur(6px); }
+  to   { opacity: 1; transform: translateY(0) rotate(0); filter: blur(0); }
+}
+@keyframes mg-pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.55); }
+  70%  { box-shadow: 0 0 0 16px rgba(37, 211, 102, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); }
+}
+@keyframes mg-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+@keyframes mg-scroll-cue {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+@keyframes mg-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.mg-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.9s var(--ease-out-expo), transform 0.9s var(--ease-out-expo);
+  transition-delay: var(--mg-delay, 0ms);
+}
+.mg-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+.mg-word {
+  display: inline-block;
+  opacity: 0;
+  animation: mg-word 0.9s var(--ease-out-expo) forwards;
+  animation-delay: var(--mg-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .mg-reveal, .mg-word {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+    transition: none !important;
+    filter: none !important;
+  }
+  .mg-anim { animation: none !important; }
+}
+
+/*
+ * Safari/Chrome en celular agrandan la pantalla solos al tocar un campo si su letra
+ * mide menos de 16px (para que se pueda leer al escribir). Esta regla queda fuera de
+ * los @layer de Tailwind a propósito, para que gane siempre sin necesitar !important en
+ * cada clase: así ningún campo del sitio, el panel o el portal dispara ese zoom en
+ * celular, sin cambiar el tamaño de letra en pantallas grandes.
+ */
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
