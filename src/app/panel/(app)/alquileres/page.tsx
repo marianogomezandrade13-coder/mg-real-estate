@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/panel/PageHeader";
 import { EmitirRecibo, type ReciboInicial } from "@/components/panel/EmitirRecibo";
 import { ClienteSelect } from "@/components/panel/ClienteSelect";
 import { Modal, Field, Kpi, Vacio, ErrorCarga, inputCls, btnPrimario, btnSecundario } from "@/components/panel/ui";
-import { sb, listarClientes, nombreCliente, fechaAR, hoyISO, subirArchivo, urlTemporal, type Cliente } from "@/lib/panel-db";
+import { sb, listarClientes, nombreCliente, fechaAR, hoyISO, subirArchivo, urlTemporal, pctDeCuerpo, leerPct, type Cliente } from "@/lib/panel-db";
 import { revalidarSitioPublico } from "@/lib/revalidar";
 import { dinero, periodo } from "@/lib/format";
 import { useEsTitular } from "@/lib/rol-context";
@@ -16,7 +16,7 @@ import type { Database } from "@/types/database";
 
 type Alq = Database["public"]["Tables"]["alquileres"]["Row"];
 type Prop = Pick<Database["public"]["Tables"]["propiedades"]["Row"], "id" | "codigo" | "titulo" | "direccion" | "propietario_id" | "estado">;
-type Contrato = Pick<Database["public"]["Tables"]["contratos"]["Row"], "id" | "fecha_inicio" | "fecha_fin" | "pdf_url">;
+type Contrato = Pick<Database["public"]["Tables"]["contratos"]["Row"], "id" | "fecha_inicio" | "fecha_fin" | "pdf_url" | "cuerpo">;
 type Indice = Alq["indice"];
 type EstadoPago = Alq["estado_pago"];
 
@@ -30,7 +30,7 @@ const ESTADO: Record<EstadoPago, { label: string; cls: string }> = {
 const sumarMeses = (iso: string, m: number) => { const d = new Date(`${iso}T12:00:00`); const dia = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + m); d.setDate(Math.min(dia, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); return d.toISOString().slice(0, 10); };
 const mesActual = () => periodo(hoyISO().slice(0, 7));
 
-const NUEVO0 = { propiedadId: "", propietarioId: "", inquilinoId: "", canon: "", inicio: hoyISO(), fin: "", indice: "ICL" as Indice, ajuste: "", dia: "10", deposito: "" };
+const NUEVO0 = { propiedadId: "", propietarioId: "", inquilinoId: "", canon: "", inicio: hoyISO(), fin: "", indice: "ICL" as Indice, ajuste: "", dia: "10", deposito: "", comisionPct: "" };
 
 export default function AlquileresPage() {
   const esTitular = useEsTitular();
@@ -42,7 +42,8 @@ export default function AlquileresPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [nuevo, setNuevo] = useState<typeof NUEVO0 | null>(null);
-  const [ajustar, setAjustar] = useState<{ a: Alq; canon: string; proximo: string } | null>(null);
+  const [ajustar, setAjustar] = useState<{ a: Alq; canon: string; proximo: string; comisionPct: string } | null>(null);
+  const [pctGeneral, setPctGeneral] = useState(10);
   const [cobro, setCobro] = useState<{ a: Alq; inicial: ReciboInicial } | null>(null);
   const [saving, setSaving] = useState(false);
   const [subiendo, setSubiendo] = useState<string | null>(null);
@@ -51,12 +52,14 @@ export default function AlquileresPage() {
 
   const cargar = useCallback(async () => {
     try {
-      const [a, p, c, cl] = await Promise.all([
+      const [a, p, c, cl, cm] = await Promise.all([
         sb.from("alquileres").select("*").order("created_at", { ascending: false }),
         sb.from("propiedades").select("id,codigo,titulo,direccion,propietario_id,estado").order("codigo"),
-        sb.from("contratos").select("id,fecha_inicio,fecha_fin,pdf_url"),
+        sb.from("contratos").select("id,fecha_inicio,fecha_fin,pdf_url,cuerpo"),
         listarClientes(),
+        sb.from("comisiones").select("admin_alquiler_pct").is("sucursal_id", null).limit(1),
       ]);
+      const general = cm.data?.[0]?.admin_alquiler_pct; if (typeof general === "number") setPctGeneral(general);
       const err = a.error ?? p.error ?? c.error;
       if (err) throw new Error(err.message);
       setError(null); setAlqs(a.data ?? []); setProps(p.data ?? []); setContratos(c.data ?? []); setClientes(cl);
@@ -95,13 +98,15 @@ export default function AlquileresPage() {
     if (!(canon > 0)) return void toast.error("Ingresá el canon mensual");
     if (!n.inicio || !n.fin) return void toast.error("Completá las fechas de inicio y fin");
     if (n.fin < n.inicio) return void toast.error("La fecha de fin no puede ser anterior al inicio");
+    const pct = leerPct(n.comisionPct);
+    if (pct === undefined) return void toast.error("La comisión debe ser un porcentaje entre 0 y 100");
     setSaving(true);
     try {
       const k = await sb.from("contratos").insert({
         tipo: "alq_viv", propiedad_id: n.propiedadId, parte_a_id: n.propietarioId, parte_b_id: n.inquilinoId, monto: canon, moneda: "ARS",
         indice_ajuste: n.indice, fecha_inicio: n.inicio, fecha_fin: n.fin, estado: "firmado", pdf_url: null,
-        cuerpo: n.deposito ? { deposito: parseFloat(n.deposito) } : null, sucursal_id: null,
-      }).select("id,fecha_inicio,fecha_fin,pdf_url").single();
+        cuerpo: n.deposito || pct !== null ? { ...(n.deposito ? { deposito: parseFloat(n.deposito) } : {}), ...(pct !== null ? { comision_pct: pct } : {}) } : null, sucursal_id: null,
+      }).select("id,fecha_inicio,fecha_fin,pdf_url,cuerpo").single();
       if (k.error || !k.data) throw new Error(k.error?.message ?? "No se pudo crear el contrato");
 
       const a = await sb.from("alquileres").insert({
@@ -133,9 +138,17 @@ export default function AlquileresPage() {
   const guardarAjuste = async () => {
     const x = ajustar!; const canon = parseFloat(x.canon);
     if (!(canon > 0) || !x.proximo) return void toast.error("Completá el nuevo canon y la fecha del próximo ajuste");
+    const pct = leerPct(x.comisionPct);
+    if (pct === undefined) return void toast.error("La comisión debe ser un porcentaje entre 0 y 100");
     setSaving(true);
     const { data, error } = await sb.from("alquileres").update({ canon, proximo_ajuste: x.proximo }).eq("id", x.a.id).select("*").single();
-    const eContrato = error ? null : (await sb.from("contratos").update({ monto: canon }).eq("id", x.a.contrato_id)).error;
+    const previo = conPorId.get(x.a.contrato_id)?.cuerpo;
+    const base: Record<string, unknown> = previo && typeof previo === "object" && !Array.isArray(previo) ? { ...(previo as Record<string, unknown>) } : {};
+    if (pct === null) delete base.comision_pct; else base.comision_pct = pct;
+    const cuerpo = (Object.keys(base).length ? base : null) as Contrato["cuerpo"];
+    const rc = error ? null : await sb.from("contratos").update({ monto: canon, cuerpo }).eq("id", x.a.contrato_id).select("id,fecha_inicio,fecha_fin,pdf_url,cuerpo").single();
+    const eContrato = rc?.error ?? null;
+    if (rc?.data) { const nuevoC = rc.data; setContratos((cs) => cs.map((c) => (c.id === nuevoC.id ? nuevoC : c))); }
     setSaving(false);
     if (eContrato) toast.warning("Canon actualizado, pero no se pudo actualizar el monto del contrato: " + eContrato.message);
     if (error || !data) return void toast.error(error?.message ?? "No se pudo guardar");
@@ -186,7 +199,7 @@ export default function AlquileresPage() {
     return { p, k, inq, acciones: !esTitular ? <div className="flex items-center gap-0.5">{verContratoBtn}</div> : (
       <div className="flex items-center gap-0.5 flex-wrap">
         <button onClick={() => abrirCobro(a)} className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-[6px] bg-[#EAF7F0] text-[#1F9D5B] hover:bg-[#1F9D5B] hover:text-white transition-colors"><HandCoins size={13} />Registrar cobro</button>
-        <button onClick={() => setAjustar({ a, canon: String(a.canon), proximo: a.proximo_ajuste })} className={btn} title="Ajustar canon" aria-label="Ajustar canon"><TrendingUp size={14} /></button>
+        <button onClick={() => setAjustar({ a, canon: String(a.canon), proximo: a.proximo_ajuste, comisionPct: String(pctDeCuerpo(k?.cuerpo) ?? "") })} className={btn} title="Ajustar canon y comisión" aria-label="Ajustar canon y comisión"><TrendingUp size={14} /></button>
         {verContratoBtn}
         <button onClick={() => elegirArchivoContrato(k)} disabled={subiendo === k?.id} className={btn} title={k?.pdf_url ? "Reemplazar contrato PDF" : "Subir contrato firmado (PDF)"} aria-label="Subir contrato PDF">
           {subiendo === k?.id ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
@@ -296,6 +309,7 @@ export default function AlquileresPage() {
             <Field label="Fin"><input type="date" value={nuevo.fin} onChange={(e) => setNuevo({ ...nuevo, fin: e.target.value })} className={inputCls} /></Field>
             <Field label="Índice de ajuste"><select value={nuevo.indice} onChange={(e) => setNuevo({ ...nuevo, indice: e.target.value as Indice })} className={inputCls}>{INDICES.map((i) => <option key={i}>{i}</option>)}</select></Field>
             <Field label="Próximo ajuste"><input type="date" value={nuevo.ajuste} onChange={(e) => setNuevo({ ...nuevo, ajuste: e.target.value })} className={inputCls} /></Field>
+            <Field label="Comisión (%)" hint={`Vacío = la general (${pctGeneral}%). Poné menos para hacer un descuento.`}><input type="number" inputMode="decimal" min="0" max="100" step="0.5" value={nuevo.comisionPct} onChange={(e) => setNuevo({ ...nuevo, comisionPct: e.target.value })} placeholder={`${pctGeneral}`} className={inputCls} /></Field>
             <Field label="Día de vencimiento" hint="Del 1 al 28"><input type="number" min="1" max="28" value={nuevo.dia} onChange={(e) => setNuevo({ ...nuevo, dia: e.target.value })} className={inputCls} /></Field>
           </div>
           <p className="text-[11px] text-[#676B63]">Al crearlo, la propiedad pasa a “Alquilada” y se retira de la web. Después podés subir el contrato firmado en PDF.</p>
@@ -310,6 +324,7 @@ export default function AlquileresPage() {
           <p className="text-[13px] text-[#565B56]">Canon actual: <strong>{dinero(ajustar.a.canon)}</strong> · índice {ajustar.a.indice}</p>
           <Field label="Nuevo canon mensual ($)"><input type="number" inputMode="decimal" min="0" value={ajustar.canon} onChange={(e) => setAjustar({ ...ajustar, canon: e.target.value })} className={inputCls} /></Field>
           <Field label="Fecha del próximo ajuste"><input type="date" value={ajustar.proximo} onChange={(e) => setAjustar({ ...ajustar, proximo: e.target.value })} className={inputCls} /></Field>
+          <Field label="Comisión de administración (%)" hint={`Vacío = la general (${pctGeneral}%). Rige para las próximas liquidaciones.`}><input type="number" inputMode="decimal" min="0" max="100" step="0.5" value={ajustar.comisionPct} onChange={(e) => setAjustar({ ...ajustar, comisionPct: e.target.value })} placeholder={`${pctGeneral}`} className={inputCls} /></Field>
         </Modal>
       )}
 

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { rutaPropiedad } from "@/lib/propiedades";
 import { listarPublicadas } from "@/lib/propiedades-db";
 
 const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://mgrealestate.vercel.app";
@@ -12,7 +13,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${BASE}/catalogo`, changeFrequency: "daily", priority: 0.9 },
     { url: `${BASE}/contacto`, changeFrequency: "monthly", priority: 0.6 },
     ...propiedades.map((p) => ({
-      url: `${BASE}/propiedad/${p.codigo}`,
+      url: `${BASE}${rutaPropiedad(p.codigo)}`,
       lastModified: p.publicada,
       changeFrequency: "weekly" as const,
       priority: 0.8,

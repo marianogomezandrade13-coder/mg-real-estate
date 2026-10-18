@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MapPin, BedDouble, Bath, Maximize2, ArrowUpRight, Heart } from "lucide-react";
 import { PropertyVisual } from "./PropertyVisual";
 import { useFavoritos } from "./useFavoritos";
-import { m2Tarjeta, type Propiedad } from "@/lib/propiedades";
+import { m2Tarjeta, rutaPropiedad, type Propiedad } from "@/lib/propiedades";
 import { cn } from "@/lib/utils";
 
 export function PropertyCard({ p, index = 0, className }: { p: Propiedad; index?: number; className?: string }) {
@@ -19,7 +19,7 @@ export function PropertyCard({ p, index = 0, className }: { p: Propiedad; index?
       )}
       style={{ animation: `mg-rise 0.7s cubic-bezier(.16,1,.3,1) ${Math.min(index, 8) * 70}ms both` }}
     >
-      <Link href={`/propiedad/${p.codigo}`} className="block" aria-label={`${p.titulo}, ${p.precio}`}>
+      <Link href={rutaPropiedad(p.codigo)} className="block" aria-label={`${p.titulo}, ${p.precio}`}>
         <PropertyVisual p={p} className="h-56" sizes="(min-width:1024px) 33vw, (min-width:640px) 50vw, 100vw">
           <div className="absolute inset-0 bg-gradient-to-t from-forest/55 via-transparent to-transparent" />
           <span className="absolute top-4 left-4 bg-forest/85 backdrop-blur text-gold-light text-[10px] font-bold tracking-[0.16em] px-3 py-1.5 rounded-full uppercase">

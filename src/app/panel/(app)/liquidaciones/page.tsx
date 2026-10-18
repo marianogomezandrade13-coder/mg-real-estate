@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Plus, Loader2, FileText, MessageCircle, Check, BadgeCheck, Trash2, Pencil, Wallet, CalendarPlus } from "lucide-react";
 import { PageHeader } from "@/components/panel/PageHeader";
 import { Modal, Field, Kpi, Vacio, ErrorCarga, inputCls, btnPrimario, btnSecundario } from "@/components/panel/ui";
-import { sb, listarClientes, nombreCliente, hoyISO, subirArchivo, urlTemporal, telefonoWa, type Cliente } from "@/lib/panel-db";
+import { sb, listarClientes, nombreCliente, hoyISO, subirArchivo, urlTemporal, telefonoWa, pctDeCuerpo, type Cliente } from "@/lib/panel-db";
 import { construirLiquidacion, netoLiquidacion } from "@/lib/pdf/liquidacion";
 import { dinero, periodo } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,7 @@ import type { Database } from "@/types/database";
 
 type Liq = Database["public"]["Tables"]["liquidaciones"]["Row"];
 type Estado = Liq["estado"];
-type Alq = Pick<Database["public"]["Tables"]["alquileres"]["Row"], "id" | "propiedad_id" | "propietario_id" | "canon" | "estado_pago">;
+type Alq = Pick<Database["public"]["Tables"]["alquileres"]["Row"], "id" | "propiedad_id" | "propietario_id" | "canon" | "estado_pago" | "contrato_id">;
 type Prop = Pick<Database["public"]["Tables"]["propiedades"]["Row"], "id" | "codigo" | "titulo">;
 
 const ESTADO: Record<Estado, string> = {
@@ -34,6 +34,7 @@ export default function LiquidacionesPage() {
   const [props, setProps] = useState<Prop[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [pct, setPct] = useState(10);
+  const [pctContrato, setPctContrato] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,13 +49,19 @@ export default function LiquidacionesPage() {
     try {
       const [l, a, p, cm, cl] = await Promise.all([
         sb.from("liquidaciones").select("*").order("periodo", { ascending: false }).order("created_at", { ascending: false }),
-        sb.from("alquileres").select("id,propiedad_id,propietario_id,canon,estado_pago"),
+        sb.from("alquileres").select("id,propiedad_id,propietario_id,canon,estado_pago,contrato_id"),
         sb.from("propiedades").select("id,codigo,titulo"),
         sb.from("comisiones").select("admin_alquiler_pct").is("sucursal_id", null).limit(1),
         listarClientes(),
       ]);
       const err = l.error ?? a.error ?? p.error ?? cm.error;
       if (err) throw new Error(err.message);
+      const ct = await sb.from("contratos").select("id,cuerpo").in("id", (a.data ?? []).map((x) => x.contrato_id));
+      if (ct.error) throw new Error(ct.error.message);
+      const porContrato = new Map((ct.data ?? []).map((c) => [c.id, pctDeCuerpo(c.cuerpo)]));
+      const mapa = new Map<string, number>();
+      for (const x of a.data ?? []) { const v = porContrato.get(x.contrato_id); if (v != null) mapa.set(x.propiedad_id, v); }
+      setPctContrato(mapa);
       setError(null); setLiqs(l.data ?? []); setAlqs(a.data ?? []); setProps(p.data ?? []); setClientes(cl);
       const c = cm.data?.[0]?.admin_alquiler_pct; if (typeof c === "number") setPct(c);
     } catch (err) { setError((err as Error).message); }
@@ -84,12 +91,12 @@ export default function LiquidacionesPage() {
   const elegirPropiedad = (id: string) => setForm((f) => {
     if (!f) return f;
     const canon = alqPorProp.get(id)?.canon;
-    return canon ? { ...f, propiedadId: id, cobrado: String(canon), comision: String(redondear((canon * pct) / 100)) } : { ...f, propiedadId: id };
+    return canon ? { ...f, propiedadId: id, cobrado: String(canon), comision: String(redondear((canon * (pctContrato.get(id) ?? pct)) / 100)) } : { ...f, propiedadId: id };
   });
   const cambiarCobrado = (v: string) => setForm((f) => {
     if (!f) return f;
     const n = parseFloat(v);
-    return { ...f, cobrado: v, comision: n > 0 ? String(redondear((n * pct) / 100)) : f.comision };
+    return { ...f, cobrado: v, comision: n > 0 ? String(redondear((n * (pctContrato.get(f.propiedadId) ?? pct)) / 100)) : f.comision };
   });
 
   const propiedadesConAlquiler = useMemo(() => props.filter((p) => alqPorProp.has(p.id)), [props, alqPorProp]);
@@ -137,7 +144,7 @@ export default function LiquidacionesPage() {
     }
     setSaving(true);
     const filas = faltan.map((a) => {
-      const comision = redondear((a.canon * pct) / 100);
+      const comision = redondear((a.canon * (pctContrato.get(a.propiedad_id) ?? pct)) / 100);
       return { propietario_id: a.propietario_id, propiedad_id: a.propiedad_id, periodo: mesLote, alquiler_cobrado: a.canon, comision, gastos: 0, retencion: 0,
         neto: a.canon - comision, estado: "Pendiente" as Estado, pdf_url: null, sucursal_id: null };
     });
@@ -321,7 +328,7 @@ export default function LiquidacionesPage() {
           <Field label="Mes que se liquida"><input type="month" value={form.periodo} onChange={(e) => setForm({ ...form, periodo: e.target.value })} className={inputCls} /></Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Alquiler cobrado ($)"><input type="number" inputMode="decimal" min="0" value={form.cobrado} onChange={(e) => cambiarCobrado(e.target.value)} className={inputCls} /></Field>
-            <Field label={`Comisión (${pct}%)`}><input type="number" inputMode="decimal" min="0" value={form.comision} onChange={(e) => setForm({ ...form, comision: e.target.value })} className={inputCls} /></Field>
+            <Field label={`Comisión (${pctContrato.get(form.propiedadId) ?? pct}%)`}><input type="number" inputMode="decimal" min="0" value={form.comision} onChange={(e) => setForm({ ...form, comision: e.target.value })} className={inputCls} /></Field>
             <Field label="Gastos ($)"><input type="number" inputMode="decimal" min="0" value={form.gastos} onChange={(e) => setForm({ ...form, gastos: e.target.value })} className={inputCls} /></Field>
             <Field label="Retención ($)"><input type="number" inputMode="decimal" min="0" value={form.retencion} onChange={(e) => setForm({ ...form, retencion: e.target.value })} className={inputCls} /></Field>
           </div>
@@ -338,7 +345,7 @@ export default function LiquidacionesPage() {
           footer={<><button onClick={() => setLote(false)} className={`${btnSecundario} flex-1`}>Cancelar</button>
             <button onClick={() => void generarLote()} disabled={saving} className={`${btnPrimario} flex-1`}>{saving && <Loader2 size={14} className="animate-spin" />}Generar</button></>}>
           <Field label="Mes"><input type="month" value={mesLote} onChange={(e) => setMesLote(e.target.value)} className={inputCls} /></Field>
-          <p className="text-[13px] text-[#565B56]">Se crea una liquidación pendiente por cada alquiler activo que todavía no tenga una en ese mes, con el canon cobrado y la comisión del {pct}%. Después ajustás gastos o retenciones y aprobás.</p>
+          <p className="text-[13px] text-[#565B56]">Se crea una liquidación pendiente por cada alquiler activo que todavía no tenga una en ese mes, con el canon cobrado y la comisión general del {pct}% (o la pactada en cada contrato si es menor). Después ajustás gastos o retenciones y aprobás.</p>
         </Modal>
       )}
     </div>

@@ -10,7 +10,7 @@ import {
 import { PageHeader } from "@/components/panel/PageHeader";
 import { comprimirImagen } from "@/lib/imagen";
 import { revalidarSitioPublico } from "@/lib/revalidar";
-import { mapaEmbedUrl } from "@/lib/propiedades";
+import { mapaEmbedUrl, rutaPropiedad, normalizarCodigo } from "@/lib/propiedades";
 import { useEsTitular } from "@/lib/rol-context";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
@@ -124,9 +124,38 @@ export default function PropiedadesPage() {
 
   const eliminar = async (p: Fila) => {
     if (!confirm(`¿Eliminar ${p.codigo} · ${p.titulo}? Se borran también sus fotos. No se puede deshacer.`)) return;
+    const cuenta = (tabla: "alquileres" | "contratos" | "liquidaciones") =>
+      supabase.from(tabla).select("id", { count: "exact", head: true }).eq("propiedad_id", p.id);
+    const [al, co, li] = await Promise.all([cuenta("alquileres"), cuenta("contratos"), cuenta("liquidaciones")]);
+    const bloqueos = [
+      al.count && `${al.count} alquiler(es)`, co.count && `${co.count} contrato(s)`, li.count && `${li.count} liquidación(es)`,
+    ].filter(Boolean);
+    if (bloqueos.length) {
+      const escrito = prompt(
+        `${p.codigo} tiene ${bloqueos.join(", ")} asociados.\n\nSi era una propiedad de prueba podés borrar TODO junto (propiedad, alquiler, contratos, liquidaciones y sus PDF). No se puede deshacer y se pierde ese historial.\n\nPara confirmar, escribí el código exacto: ${p.codigo}\n(Si es una propiedad real, cancelá y mejor sacala de la web.)`
+      );
+      if (escrito === null) return;
+      if (escrito.trim() !== p.codigo) { toast.error("El código no coincide: no se borró nada."); return; }
+      const [liqs, ctos] = await Promise.all([
+        supabase.from("liquidaciones").select("pdf_url").eq("propiedad_id", p.id),
+        supabase.from("contratos").select("pdf_url").eq("propiedad_id", p.id),
+      ]);
+      const r1 = await supabase.from("liquidaciones").delete().eq("propiedad_id", p.id);
+      if (r1.error) { toast.error("No se pudieron borrar las liquidaciones: " + r1.error.message); return; }
+      const r2 = await supabase.from("alquileres").delete().eq("propiedad_id", p.id);
+      if (r2.error) { toast.error("No se pudieron borrar los alquileres: " + r2.error.message); return; }
+      const r3 = await supabase.from("contratos").delete().eq("propiedad_id", p.id);
+      if (r3.error) { toast.error("No se pudieron borrar los contratos: " + r3.error.message); return; }
+      const pdfs = [...(liqs.data ?? []), ...(ctos.data ?? [])].map((x) => x.pdf_url).filter((x): x is string => !!x);
+      if (pdfs.length) await supabase.storage.from("pdfs").remove(pdfs);
+    }
     const { data: medios } = await supabase.from("propiedad_medios").select("url").eq("propiedad_id", p.id);
+    await Promise.all([
+      supabase.from("leads").update({ propiedad_id: null }).eq("propiedad_id", p.id),
+      supabase.from("eventos_agenda").update({ propiedad_id: null }).eq("propiedad_id", p.id),
+    ]);
     const { error } = await supabase.from("propiedades").delete().eq("id", p.id);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(error.code === "23503" ? "No se puede eliminar: la propiedad todavía está vinculada a otros registros." : error.message); return; }
     const paths = (medios ?? []).map((m) => pathDeUrl(m.url)).filter(Boolean);
     if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
     setProps((ps) => ps.filter((x) => x.id !== p.id));
@@ -191,17 +220,25 @@ export default function PropiedadesPage() {
       };
 
       let id: string, codigo: string;
+      const codigoForm = normalizarCodigo(form.codigo);
+      if (form.codigo.trim() && !codigoForm) throw new Error("El código solo puede tener letras, números y guiones");
       if (editar) {
-        const { error } = await supabase.from("propiedades").update(datos).eq("id", editar.id);
-        if (error) throw new Error(error.message);
-        id = editar.id; codigo = editar.codigo;
+        codigo = codigoForm || editar.codigo;
+        const { error } = await supabase.from("propiedades").update({ ...datos, codigo }).eq("id", editar.id);
+        if (error) throw new Error(error.code === "23505" ? `El código ${codigo} ya existe en otra propiedad` : error.message);
+        id = editar.id;
+        if (codigo !== editar.codigo) {
+          const { error: eDoc } = await supabase.from("documentos").update({ vinculado_a: codigo }).eq("vinculado_a", editar.codigo);
+          if (eDoc) toast.warning("El código cambió, pero no se pudieron actualizar los documentos vinculados: " + eDoc.message);
+          actualizarSitio();
+        }
       } else {
-        codigo = form.codigo.trim() || (await siguienteCodigo());
+        codigo = codigoForm || (await siguienteCodigo());
         const base = {
           ...datos, codigo, sucursal_id: null, lat: null, lng: null, estado_conservacion: null, patio: null,
         };
         let res = await supabase.from("propiedades").insert(base).select("id").single();
-        if (res.error?.code === "23505" && !form.codigo.trim()) { // código repetido: se recalcula una vez
+        if (res.error?.code === "23505" && !codigoForm) { // código repetido: se recalcula una vez
           codigo = await siguienteCodigo();
           res = await supabase.from("propiedades").insert({ ...base, codigo }).select("id").single();
         }
@@ -377,7 +414,8 @@ export default function PropiedadesPage() {
                 <div className="sm:col-span-2"><label className={label}>Título del aviso *</label>
                   <input value={form.titulo} onChange={(e) => set("titulo", e.target.value)} className={input} placeholder="Ej: Casa 3 dormitorios con jardín en Dorrego" /></div>
                 <div><label className={label}>Código {modal.editar ? "" : "(opcional)"}</label>
-                  <input value={form.codigo} onChange={(e) => set("codigo", e.target.value)} disabled={!!modal.editar} className={cn(input, modal.editar && "bg-[#F6F3EC] text-[#676B63]")} placeholder="Se genera solo (MG-0001…)" /></div>
+                  <input value={form.codigo} onChange={(e) => set("codigo", e.target.value)} className={input} placeholder="Se genera solo (MG-0001…)" />
+                  <p className="text-[11px] text-[#676B63] mt-1">Podés escribirlo con espacios: se guarda en mayúsculas y con guiones.{form.codigo.trim() && normalizarCodigo(form.codigo) ? <> Quedará: <span className="font-mono font-semibold text-[#8A6529]">{normalizarCodigo(form.codigo)}</span></> : null}</p></div>
                 <div><label className={label}>Propietario</label>
                   <select value={form.propietario_id} onChange={(e) => set("propietario_id", e.target.value)} className={input}>
                     <option value="">Sin asignar</option>
@@ -516,7 +554,7 @@ function Acciones({ p, onEditar, onEstado, onEliminar }: { p: Fila; onEditar: ()
   const esTitular = useEsTitular();
   const btn = "p-2 rounded-[6px] text-[#676B63] hover:bg-[#F6F3EC]";
   const verEnSitio = p.publicada_web && p.estado === "Activa" && (
-    <a href={`/propiedad/${p.codigo}`} target="_blank" rel="noopener noreferrer" className={btn} title="Ver en el sitio" aria-label={`Ver ${p.codigo} en el sitio`}><ExternalLink size={14} /></a>
+    <a href={rutaPropiedad(p.codigo)} target="_blank" rel="noopener noreferrer" className={btn} title="Ver en el sitio" aria-label={`Ver ${p.codigo} en el sitio`}><ExternalLink size={14} /></a>
   );
   if (!esTitular) return <>{verEnSitio}</>;
   return (

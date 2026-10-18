@@ -7,7 +7,8 @@ import {
 import { Galeria } from "@/components/sitio/Galeria";
 import { PropertyCard } from "@/components/sitio/PropertyCard";
 import { FavButton } from "@/components/sitio/FavButton";
-import { similares, mapaEmbedUrl } from "@/lib/propiedades";
+import { ShareButton } from "@/components/sitio/ShareButton";
+import { similares, mapaEmbedUrl, codigoDesdeRuta } from "@/lib/propiedades";
 import { listarPublicadas } from "@/lib/propiedades-db";
 import { BRAND, waLink } from "@/lib/brand";
 
@@ -22,7 +23,7 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
-  const { code } = await params;
+  const code = codigoDesdeRuta((await params).code);
   const p = (await listarPublicadas()).find((x) => x.codigo === code);
   if (!p) return { title: "Propiedad no encontrada" };
   const desc = p.descripcion ? ` ${p.descripcion.slice(0, 110)}…` : "";
@@ -34,7 +35,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function PropiedadDetallePage({ params }: Params) {
-  const { code } = await params;
+  const code = codigoDesdeRuta((await params).code);
   const todas = await listarPublicadas();
   const p = todas.find((x) => x.codigo === code);
   if (!p) notFound();
@@ -83,7 +84,7 @@ export default async function PropiedadDetallePage({ params }: Params) {
               <p className="text-gold text-[11px] font-bold tracking-[0.28em] uppercase mb-3 flex items-center gap-3">
                 <span className="h-px w-8 bg-gold/50" />{p.tipo}
               </p>
-              <h1 className="font-display text-[36px] md:text-[48px] font-medium text-forest leading-[1.05]">{p.titulo}</h1>
+              <h1 className="font-display text-[28px] sm:text-[36px] md:text-[48px] font-medium text-forest leading-[1.1] text-balance">{p.titulo}</h1>
               <p className="mt-3 flex items-center gap-1.5 text-[15px] text-text-muted"><MapPin size={15} className="shrink-0" />{p.ubicacion}</p>
               <div className="mt-6 flex flex-wrap items-baseline gap-x-5 gap-y-1">
                 <p className="font-display text-[44px] font-semibold text-gold leading-none">{p.precio}</p>
@@ -175,7 +176,10 @@ export default async function PropiedadDetallePage({ params }: Params) {
                   className="flex items-center justify-center gap-2 w-full py-3.5 border border-border-mid text-text-primary font-semibold text-[14px] rounded-[12px] hover:bg-app-bg transition-colors">
                   <Phone size={16} />Llamar
                 </a>
-                <FavButton code={p.codigo} className="w-full" />
+                <div className="space-y-3">
+                  <FavButton code={p.codigo} className="w-full" />
+                  <ShareButton titulo={p.titulo} className="w-full" />
+                </div>
               </div>
 
               <div className="mt-6 pt-6 border-t border-border-light">

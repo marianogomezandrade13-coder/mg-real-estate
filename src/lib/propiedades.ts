@@ -74,3 +74,15 @@ export function similares(p: Propiedad, todas: Propiedad[], n = 3) {
 /** Mapa embebido sin API key. */
 export const mapaEmbedUrl = (direccion: string) =>
   `https://maps.google.com/maps?q=${encodeURIComponent(direccion)}&output=embed`;
+
+/** "Soldado independencia" → "SOLDADO-INDEPENDENCIA" (sin acentos, solo letras, números y guiones). */
+export const normalizarCodigo = (texto: string) =>
+  texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+/** Ruta pública de la ficha. Los códigos los escribe el equipo y pueden tener espacios o acentos. */
+export const rutaPropiedad = (codigo: string) => `/propiedad/${encodeURIComponent(codigo)}`;
+
+/** El parámetro de la URL puede llegar codificado ("Solado%20independencia"). */
+export function codigoDesdeRuta(param: string) {
+  try { return decodeURIComponent(param); } catch { return param; }
+}

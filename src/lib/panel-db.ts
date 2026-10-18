@@ -45,3 +45,18 @@ export function telefonoWa(t?: string | null) {
   if (d.length < 8) return null;
   return d.startsWith("54") ? d : `549${d.replace(/^0+/, "").replace(/^15/, "")}`;
 }
+
+/** Comisión de administración pactada para un alquiler (guardada en el contrato). null = se usa la comisión general. */
+export function pctDeCuerpo(cuerpo: unknown): number | null {
+  if (!cuerpo || typeof cuerpo !== "object" || Array.isArray(cuerpo)) return null;
+  const v = (cuerpo as Record<string, unknown>).comision_pct;
+  return typeof v === "number" && v >= 0 && v <= 100 ? v : null;
+}
+
+/** Texto del formulario → porcentaje válido, null si está vacío, undefined si es inválido. */
+export function leerPct(texto: string): number | null | undefined {
+  const t = texto.trim().replace(",", ".");
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined;
+}
