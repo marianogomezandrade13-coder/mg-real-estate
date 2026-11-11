@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Plus, Check, Minus, Copy, X, Loader2, ShieldOff, ShieldCheck, AlertTriangle, Clock } from "lucide-react";
+import { Plus, Check, Minus, Copy, X, Loader2, ShieldOff, ShieldCheck, AlertTriangle, Clock, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BRAND } from "@/lib/brand";
 import { fechaAR } from "@/lib/panel-db";
@@ -189,6 +189,20 @@ export function ConfiguracionClient({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Copia de seguridad */}
+          <div className="bg-white rounded-[16px] shadow-card p-6 space-y-3">
+            <h2 className="text-[16px] font-bold text-[#1F2421]">Copia de seguridad</h2>
+            <p className="text-[12px] text-[#676B63]">
+              Descarga un archivo con todos los datos del sistema: propiedades, clientes, contratos, alquileres, caja, finanzas y más.
+              Guardalo en un lugar seguro (por ejemplo Google Drive) y repetilo cada semana.
+              Las fotos y los PDF no van en este archivo: están guardados aparte en Supabase.
+            </p>
+            <a href="/panel/copia-seguridad/descargar" download
+              className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-[10px] bg-[#16201B] text-[#D9BC85] text-[13px] font-semibold hover:bg-[#1F2D26]">
+              <Download size={15} />Descargar copia ahora
+            </a>
           </div>
 
           {/* Comisiones */}

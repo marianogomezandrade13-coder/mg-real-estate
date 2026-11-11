@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Clock, AlertCircle, Loader2, Receipt, FileSignature, Home, FolderOpen, KeyRound } from "lucide-react";
+import Link from "next/link";
+import { CalendarDays, Clock, AlertCircle, Loader2, Receipt, FileSignature, Home, FolderOpen, KeyRound, MessageSquare, Wallet, TrendingUp, CheckCircle2, Landmark } from "lucide-react";
 import { KpiCard } from "@/components/panel/dashboard/KpiCard";
 import { IngresosBarchart, type PuntoBarra } from "@/components/panel/dashboard/BarChart";
 import { OperacionesDonut, type Porcion } from "@/components/panel/dashboard/DonutChart";
@@ -16,6 +17,8 @@ type Alquiler = Database["public"]["Tables"]["alquileres"]["Row"];
 type Recibo = Pick<Database["public"]["Tables"]["recibos"]["Row"], "id" | "total" | "moneda" | "fecha" | "concepto" | "created_at" | "cliente_id">;
 type Liquidacion = Pick<Database["public"]["Tables"]["liquidaciones"]["Row"], "id" | "propiedad_id" | "periodo" | "neto" | "comision" | "estado" | "created_at">;
 type Tasacion = Pick<Database["public"]["Tables"]["tasaciones"]["Row"], "id" | "direccion" | "valor_recomendado" | "created_at">;
+type LeadNuevo = Pick<Database["public"]["Tables"]["leads"]["Row"], "id" | "nombre" | "etapa" | "created_at">;
+type EventoHoy = Pick<Database["public"]["Tables"]["eventos_agenda"]["Row"], "id" | "titulo" | "hora" | "tipo">;
 type Documento = Pick<Database["public"]["Tables"]["documentos"]["Row"], "id" | "nombre" | "categoria" | "created_at">;
 
 const sumarDias = (iso: string, d: number) => { const dt = new Date(`${iso}T12:00:00`); dt.setDate(dt.getDate() + d); return dt.toISOString().slice(0, 10); };
@@ -31,12 +34,15 @@ export default function DashboardPage() {
   const [tasaciones, setTasaciones] = useState<Tasacion[]>([]);
   const [documentos, setDocumentos] = useState<Documento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [leadsNuevos, setLeadsNuevos] = useState<LeadNuevo[]>([]);
+  const [eventosHoy, setEventosHoy] = useState<EventoHoy[]>([]);
+  const [ultimoCierre, setUltimoCierre] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
     try {
-      const [p, a, r, l, t, d, c] = await Promise.all([
+      const [p, a, r, l, t, d, c, ln, ev, ci] = await Promise.all([
         sb.from("propiedades").select("id,codigo,titulo,estado,publicada_web"),
         sb.from("alquileres").select("*"),
         sb.from("recibos").select("id,total,moneda,fecha,concepto,created_at,cliente_id").order("created_at", { ascending: false }).limit(200),
@@ -44,12 +50,17 @@ export default function DashboardPage() {
         sb.from("tasaciones").select("id,direccion,valor_recomendado,created_at").order("created_at", { ascending: false }).limit(100),
         sb.from("documentos").select("id,nombre,categoria,created_at").order("created_at", { ascending: false }).limit(20),
         listarClientes(),
+        sb.from("leads").select("id,nombre,etapa,created_at").eq("etapa", "nuevo").order("created_at", { ascending: false }).limit(50),
+        sb.from("eventos_agenda").select("id,titulo,hora,tipo").eq("fecha", hoyISO()).order("hora"),
+        sb.from("caja_cierres").select("fecha").eq("tipo", "diario").order("fecha", { ascending: false }).limit(1),
       ]);
       const err = p.error ?? a.error ?? r.error ?? l.error ?? t.error ?? d.error;
       if (err) throw new Error(err.message);
       setError(null);
       setProps(p.data ?? []); setAlquileres(a.data ?? []); setRecibos(r.data ?? []); setLiquidaciones(l.data ?? []);
       setTasaciones(t.data ?? []); setDocumentos(d.data ?? []); setClientes(c);
+      // Las alertas son un extra: si alguna consulta falla, el resto del tablero sigue funcionando.
+      setLeadsNuevos(ln.data ?? []); setEventosHoy(ev.data ?? []); setUltimoCierre(ci.data?.[0]?.fecha ?? null);
     } catch (err) { setError((err as Error).message); }
     finally { setLoading(false); }
   }, []);
@@ -75,6 +86,22 @@ export default function DashboardPage() {
       ajustesProximos: alquileres.filter((a) => a.proximo_ajuste >= hoy && a.proximo_ajuste <= en30).length,
     };
   }, [alquileres, recibos, liquidaciones, tasaciones, props]);
+
+  const alertas = useMemo(() => {
+    const hoy = hoyISO();
+    const lista: { k: string; icon: typeof MessageSquare; tono: "rojo" | "ambar" | "verde"; titulo: string; detalle: string; href: string }[] = [];
+    if (leadsNuevos.length > 0) lista.push({ k: "leads", icon: MessageSquare, tono: "ambar", titulo: `${leadsNuevos.length} ${leadsNuevos.length === 1 ? "consulta nueva sin atender" : "consultas nuevas sin atender"}`, detalle: leadsNuevos.slice(0, 3).map((l) => l.nombre).join(", "), href: "/panel/crm" });
+    if (eventosHoy.length > 0) lista.push({ k: "agenda", icon: CalendarDays, tono: "verde", titulo: `${eventosHoy.length} ${eventosHoy.length === 1 ? "evento hoy" : "eventos hoy"}`, detalle: eventosHoy.slice(0, 3).map((e) => `${e.hora.slice(0, 5)} ${e.titulo}`).join(" · "), href: "/panel/agenda" });
+    const deuda = alquileres.filter((a) => a.estado_pago !== "al_dia");
+    if (deuda.length > 0) lista.push({ k: "deuda", icon: Wallet, tono: "rojo", titulo: `${deuda.length} ${deuda.length === 1 ? "alquiler con pago atrasado" : "alquileres con pago atrasado"}`, detalle: deuda.slice(0, 3).map((a) => propPorId.get(a.propiedad_id)?.codigo ?? "").filter(Boolean).join(", "), href: "/panel/alquileres" });
+    const ajustesVencidos = alquileres.filter((a) => a.proximo_ajuste < hoy);
+    if (ajustesVencidos.length > 0) lista.push({ k: "ajuste", icon: TrendingUp, tono: "ambar", titulo: `${ajustesVencidos.length} ${ajustesVencidos.length === 1 ? "ajuste de canon vencido" : "ajustes de canon vencidos"}`, detalle: "Actualizá el canon para seguir cobrando el valor correcto.", href: "/panel/alquileres" });
+    const liqPend = liquidaciones.filter((l) => l.estado === "Pendiente");
+    if (liqPend.length > 0) lista.push({ k: "liq", icon: FileSignature, tono: "ambar", titulo: `${liqPend.length} ${liqPend.length === 1 ? "liquidación pendiente" : "liquidaciones pendientes"} de aprobar`, detalle: "Revisalas y aprobalas para pagar a los propietarios.", href: "/panel/liquidaciones" });
+    const diasSinCierre = ultimoCierre ? Math.floor((new Date(`${hoy}T12:00:00`).getTime() - new Date(`${ultimoCierre}T12:00:00`).getTime()) / 86400000) : null;
+    if (diasSinCierre !== null && diasSinCierre > 2) lista.push({ k: "caja", icon: Landmark, tono: "ambar", titulo: `La caja no se cierra hace ${diasSinCierre} días`, detalle: `Último cierre: ${fechaAR(ultimoCierre!)}.`, href: "/panel/caja" });
+    return lista;
+  }, [leadsNuevos, eventosHoy, alquileres, liquidaciones, ultimoCierre, propPorId]);
 
   const barra = useMemo((): PuntoBarra[] => {
     const meses = ultimos6Meses();
@@ -122,6 +149,22 @@ export default function DashboardPage() {
         <h1 className="text-[26px] font-bold text-[#1F2421] font-[family-name:var(--font-space-grotesk)]">Dashboard gerencial</h1>
         <p className="text-[13px] text-[#676B63] mt-0.5 capitalize">Resumen de {mesAr()} · San Martín, Mendoza</p>
       </div>
+
+      <section aria-label="Para atender hoy" className="bg-white rounded-[16px] shadow-card p-5">
+        <h2 className="text-[15px] font-bold text-[#1F2421] mb-3 font-[family-name:var(--font-space-grotesk)]">Para atender hoy</h2>
+        {alertas.length === 0 ? (
+          <p className="flex items-center gap-2 text-[13px] text-[#1F9D5B]"><CheckCircle2 size={16} />Todo al día: no hay nada urgente pendiente.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {alertas.map((al) => (
+              <Link key={al.k} href={al.href} className="flex items-start gap-3 p-3 rounded-[12px] border border-[#F0ECE0] hover:border-[#8A6529] hover:bg-[#FBF8F1] transition-colors">
+                <span className={cn("w-9 h-9 rounded-[9px] grid place-items-center shrink-0", al.tono === "rojo" ? "bg-[#FBECEF] text-[#C0506A]" : al.tono === "ambar" ? "bg-[#FBF3E2] text-[#8A5A0F]" : "bg-[#EAF7F0] text-[#1F9D5B]")}><al.icon size={16} /></span>
+                <span className="min-w-0"><span className="block text-[13px] font-semibold text-[#1F2421]">{al.titulo}</span><span className="block text-[12px] text-[#676B63] truncate">{al.detalle}</span></span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard label="Alquileres activos" value={String(kpi.alquileresActivos)} sub={`${kpi.mora} con deuda`} />

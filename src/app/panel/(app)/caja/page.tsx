@@ -29,6 +29,7 @@ export default function CajaPage() {
   const [form, setForm] = useState(FORM0);
   const [guardando, setGuardando] = useState(false);
   const [cerrando, setCerrando] = useState(false);
+  const [sinCerrar, setSinCerrar] = useState({ neto: 0, cantidad: 0 });
 
   const hoy = hoyISO();
 
@@ -38,14 +39,21 @@ export default function CajaPage() {
       sb.from("caja_cierres").select("*").eq("fecha", hoy).eq("tipo", "diario").maybeSingle(),
       sb.from("caja_cierres").select("*").eq("tipo", "diario").lt("fecha", hoy).order("fecha", { ascending: false }).limit(1).maybeSingle(),
     ]);
-    const err = m.error ?? ch.error ?? uc.error;
-    if (err) setError(err.message); else { setError(null); setMovs(m.data ?? []); setCierreHoy(ch.data ?? null); setUltimoCierre(uc.data ?? null); }
+    // Movimientos de días anteriores que nunca se cerraron: entran en la apertura de hoy para que el saldo no pierda plata.
+    let previos = sb.from("movimientos_caja").select("monto,es_ingreso,fecha").lt("fecha", hoy);
+    if (uc.data) previos = previos.gt("fecha", uc.data.fecha);
+    const pv = await previos;
+    const err = m.error ?? ch.error ?? uc.error ?? pv.error;
+    if (err) setError(err.message); else {
+      setError(null); setMovs(m.data ?? []); setCierreHoy(ch.data ?? null); setUltimoCierre(uc.data ?? null);
+      setSinCerrar({ neto: (pv.data ?? []).reduce((a, x) => a + (x.es_ingreso ? x.monto : -x.monto), 0), cantidad: (pv.data ?? []).length });
+    }
     setLoading(false);
   }, [hoy]);
   useEffect(() => { const t = setTimeout(() => void cargar(), 0); return () => clearTimeout(t); }, [cargar]);
 
   const cerrada = !!cierreHoy;
-  const apertura = ultimoCierre?.saldo ?? 0;
+  const apertura = (ultimoCierre?.saldo ?? 0) + sinCerrar.neto;
   const totalIngresos = useMemo(() => movs.filter((m) => m.es_ingreso).reduce((a, m) => a + m.monto, 0), [movs]);
   const totalEgresos = useMemo(() => movs.filter((m) => !m.es_ingreso).reduce((a, m) => a + m.monto, 0), [movs]);
   const saldo = apertura + totalIngresos - totalEgresos;
@@ -114,9 +122,9 @@ export default function CajaPage() {
         </div>
       )}
 
-      {!loading && !error && ultimoCierre && ultimoCierre.fecha < new Date(new Date(`${hoy}T12:00:00`).getTime() - 2 * 86400000).toISOString().slice(0, 10) && (
+      {!loading && !error && sinCerrar.cantidad > 0 && (
         <div className="bg-[#FBF3E2] text-[#8A5A0F] rounded-[12px] px-4 py-3 text-[13px] font-semibold">
-          El último cierre de caja fue el {ultimoCierre.fecha}. Los movimientos de los días sin cerrar no están en la apertura de hoy.
+          Hay {sinCerrar.cantidad} {sinCerrar.cantidad === 1 ? "movimiento" : "movimientos"} de días anteriores sin cerrar{ultimoCierre ? ` (último cierre: ${ultimoCierre.fecha})` : ""}. Ya están sumados en la apertura de hoy.
         </div>
       )}
 
