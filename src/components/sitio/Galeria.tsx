@@ -7,14 +7,69 @@ import { PropertyVisual } from "./PropertyVisual";
 import type { Propiedad } from "@/lib/propiedades";
 import { cn } from "@/lib/utils";
 
-/** Galería de la ficha: foto grande + miniaturas + visor a pantalla completa (teclado y gestos táctiles). */
+/**
+ * Carrusel con scroll nativo (scroll-snap): el dedo arrastra la foto con inercia y siempre queda
+ * una foto entera centrada. El índice se deduce de la posición del scroll, así que nunca se
+ * desincroniza con lo que se ve.
+ */
+function Pista({ fotos, indice, onIndice, alt, ajuste, className, onAbrir, prioridad, instantaneo }: {
+  fotos: string[]; indice: number; onIndice: (i: number) => void; alt: string; ajuste: "cover" | "contain";
+  className?: string; onAbrir?: () => void; prioridad?: boolean; instantaneo?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const actual = useRef(indice);
+  const desdeScroll = useRef(-1);
+  useEffect(() => { actual.current = indice; }, [indice]);
+
+  const alinear = useCallback((i: number, suave: boolean) => {
+    const el = ref.current;
+    if (!el) return;
+    const destino = i * el.clientWidth;
+    const lejos = Math.abs(el.scrollLeft - destino) > el.clientWidth * 1.5; // saltos largos (de la última a la primera): sin animar
+    if (Math.abs(el.scrollLeft - destino) > 1) el.scrollTo({ left: destino, behavior: suave && !lejos ? "smooth" : "auto" });
+  }, []);
+
+  // Cambios desde afuera (flechas, miniaturas, teclado): mover el scroll hasta esa foto.
+  // Si el cambio nació del propio scroll del usuario, no se vuelve a mover (pelearía con su gesto).
+  useEffect(() => {
+    if (desdeScroll.current === indice) { desdeScroll.current = -1; return; }
+    alinear(indice, !instantaneo);
+  }, [indice, alinear, instantaneo]);
+
+  // Al rotar el celular o cambiar el tamaño, mantener la misma foto centrada.
+  useEffect(() => {
+    const onResize = () => alinear(actual.current, false);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [alinear]);
+
+  const alScroll = () => {
+    const el = ref.current;
+    if (!el || el.clientWidth === 0) return;
+    const i = Math.min(fotos.length - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)));
+    if (i !== actual.current) { actual.current = i; desdeScroll.current = i; onIndice(i); }
+  };
+
+  return (
+    <div ref={ref} onScroll={alScroll} onClick={onAbrir}
+      className={cn("flex overflow-x-auto snap-x snap-mandatory overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", className)}>
+      {fotos.map((f, k) => (
+        <div key={f} className="relative shrink-0 grow-0 basis-full h-full snap-center snap-always">
+          <Image src={f} alt={`${alt} — foto ${k + 1} de ${fotos.length}`} fill draggable={false}
+            {...(prioridad && k === 0 ? { priority: true } : { loading: Math.abs(k - indice) <= 1 ? ("eager" as const) : ("lazy" as const) })}
+            sizes={ajuste === "cover" ? "(min-width:1024px) 75vw, 100vw" : "100vw"}
+            className={cn("select-none", ajuste === "cover" ? "object-cover" : "object-contain")} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Galería de la ficha: foto grande deslizable + miniaturas + visor a pantalla completa. */
 export function Galeria({ p }: { p: Pick<Propiedad, "fotos" | "tono" | "tipo" | "titulo" | "codigo" | "operacion"> }) {
   const fotos = p.fotos;
   const [i, setI] = useState(0);
   const [abierto, setAbierto] = useState(false);
-  const [touchX, setTouchX] = useState<number | null>(null);
-  const inicio = useRef<{ x: number; y: number } | null>(null);
-  const deslizo = useRef(false);
 
   const ir = useCallback((d: number) => setI((v) => (v + d + fotos.length) % fotos.length), [fotos.length]);
 
@@ -33,8 +88,8 @@ export function Galeria({ p }: { p: Pick<Propiedad, "fotos" | "tono" | "tipo" | 
   const insignias = (
     <>
       <div className="absolute inset-0 bg-gradient-to-t from-forest/50 via-transparent to-transparent pointer-events-none" />
-      <span className="absolute top-5 left-5 bg-forest/85 backdrop-blur text-gold-light text-[11px] font-bold tracking-[0.18em] px-3.5 py-1.5 rounded-full uppercase">{p.operacion}</span>
-      <span className="absolute bottom-5 left-5 text-white/90 text-[12px] font-mono tracking-wide">{p.codigo}</span>
+      <span className="absolute top-5 left-5 bg-forest/85 backdrop-blur text-gold-light text-[11px] font-bold tracking-[0.18em] px-3.5 py-1.5 rounded-full uppercase pointer-events-none">{p.operacion}</span>
+      <span className="absolute bottom-5 left-5 text-white/90 text-[12px] font-mono tracking-wide pointer-events-none">{p.codigo}</span>
     </>
   );
 
@@ -52,38 +107,28 @@ export function Galeria({ p }: { p: Pick<Propiedad, "fotos" | "tono" | "tipo" | 
   }
 
   const miniaturas = fotos.slice(0, 5);
+  const flecha = "absolute top-1/2 -translate-y-1/2 grid place-items-center w-10 h-10 rounded-full bg-white/85 text-forest shadow-md hover:bg-white transition-opacity";
   return (
     <>
       <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-3 mb-10">
         <div
-          role="button" tabIndex={0} aria-label="Ver fotos a pantalla completa"
-          onClick={() => { if (deslizo.current) { deslizo.current = false; return; } setAbierto(true); }}
+          role="group" aria-roledescription="carrusel" aria-label={`Fotos de ${p.titulo}`} tabIndex={0}
           onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setAbierto(true); }
+            if (e.key === "Enter") { e.preventDefault(); setAbierto(true); }
             if (e.key === "ArrowRight") ir(1);
             if (e.key === "ArrowLeft") ir(-1);
           }}
-          onTouchStart={(e) => { inicio.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; deslizo.current = false; }}
-          onTouchEnd={(e) => {
-            const o = inicio.current; inicio.current = null;
-            if (!o || fotos.length < 2) return;
-            const dx = e.changedTouches[0].clientX - o.x, dy = e.changedTouches[0].clientY - o.y;
-            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.2) { deslizo.current = true; ir(dx < 0 ? 1 : -1); }
-          }}
-          className="group relative h-[300px] sm:h-[420px] lg:h-[500px] rounded-[24px] overflow-hidden bg-forest-2 text-left cursor-zoom-in select-none touch-pan-y focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gold/40">
-          <Image src={fotos[i]} alt={`${p.titulo} — foto ${i + 1} de ${fotos.length}`} fill priority sizes="(min-width:1024px) 75vw, 100vw" draggable={false}
-            className="object-cover transition-transform duration-[900ms] group-hover:scale-105" />
+          className="group relative h-[300px] sm:h-[420px] lg:h-[500px] rounded-[24px] overflow-hidden bg-forest-2 cursor-zoom-in focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-gold/40">
+          <Pista fotos={fotos} indice={i} onIndice={setI} alt={p.titulo} ajuste="cover" prioridad onAbrir={() => setAbierto(true)} className="h-full w-full" />
           {insignias}
           {fotos.length > 1 && (
             <>
-              <button type="button" onClick={(e) => { e.stopPropagation(); ir(-1); }} aria-label="Foto anterior"
-                className="absolute left-3 top-1/2 -translate-y-1/2 grid place-items-center w-10 h-10 rounded-full bg-white/85 text-forest shadow-md hover:bg-white lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><ChevronLeft size={20} /></button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); ir(1); }} aria-label="Foto siguiente"
-                className="absolute right-3 top-1/2 -translate-y-1/2 grid place-items-center w-10 h-10 rounded-full bg-white/85 text-forest shadow-md hover:bg-white lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><ChevronRight size={20} /></button>
-              <span className="absolute top-5 right-5 bg-forest/80 backdrop-blur text-white text-[12px] font-semibold px-3 py-1.5 rounded-full tabular-nums" aria-live="polite">{i + 1} / {fotos.length}</span>
+              <button type="button" onClick={() => ir(-1)} aria-label="Foto anterior" className={cn(flecha, "left-3 lg:opacity-0 lg:group-hover:opacity-100")}><ChevronLeft size={20} /></button>
+              <button type="button" onClick={() => ir(1)} aria-label="Foto siguiente" className={cn(flecha, "right-3 lg:opacity-0 lg:group-hover:opacity-100")}><ChevronRight size={20} /></button>
+              <span className="absolute top-5 right-5 bg-forest/80 backdrop-blur text-white text-[12px] font-semibold px-3 py-1.5 rounded-full tabular-nums pointer-events-none" aria-live="polite">{i + 1} / {fotos.length}</span>
             </>
           )}
-          <span className="absolute bottom-5 right-5 inline-flex items-center gap-2 bg-white/90 text-forest text-[12px] font-semibold px-3.5 py-2 rounded-full">
+          <span className="absolute bottom-5 right-5 inline-flex items-center gap-2 bg-white/90 text-forest text-[12px] font-semibold px-3.5 py-2 rounded-full pointer-events-none">
             <Expand size={14} />{fotos.length} {fotos.length === 1 ? "foto" : "fotos"}
           </span>
         </div>
@@ -105,21 +150,16 @@ export function Galeria({ p }: { p: Pick<Propiedad, "fotos" | "tono" | "tipo" | 
       </div>
 
       {abierto && (
-        <div role="dialog" aria-modal="true" aria-label="Galería de fotos" className="fixed inset-0 z-[70] bg-black/95 flex items-center justify-center"
-          onClick={() => setAbierto(false)}
-          onTouchStart={(e) => setTouchX(e.touches[0].clientX)}
-          onTouchEnd={(e) => { if (touchX !== null) { const dx = e.changedTouches[0].clientX - touchX; if (Math.abs(dx) > 50) ir(dx < 0 ? 1 : -1); } setTouchX(null); }}>
+        <div role="dialog" aria-modal="true" aria-label="Galería de fotos" className="fixed inset-0 z-[70] bg-black/95">
           <button onClick={() => setAbierto(false)} aria-label="Cerrar" className="absolute top-4 right-4 grid place-items-center w-11 h-11 rounded-full bg-white/10 text-white hover:bg-white/20 z-10"><X size={22} /></button>
+          <Pista fotos={fotos} indice={i} onIndice={setI} alt={p.titulo} ajuste="contain" instantaneo className="absolute inset-x-0 top-14 bottom-14 sm:inset-x-16" />
           {fotos.length > 1 && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); ir(-1); }} aria-label="Foto anterior" className="absolute left-3 sm:left-6 grid place-items-center w-11 h-11 rounded-full bg-white/10 text-white hover:bg-white/20 z-10"><ChevronLeft size={24} /></button>
-              <button onClick={(e) => { e.stopPropagation(); ir(1); }} aria-label="Foto siguiente" className="absolute right-3 sm:right-6 grid place-items-center w-11 h-11 rounded-full bg-white/10 text-white hover:bg-white/20 z-10"><ChevronRight size={24} /></button>
+              <button onClick={() => ir(-1)} aria-label="Foto anterior" className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 grid place-items-center w-11 h-11 rounded-full bg-white/10 text-white hover:bg-white/20 z-10"><ChevronLeft size={24} /></button>
+              <button onClick={() => ir(1)} aria-label="Foto siguiente" className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 grid place-items-center w-11 h-11 rounded-full bg-white/10 text-white hover:bg-white/20 z-10"><ChevronRight size={24} /></button>
             </>
           )}
-          <div className="relative w-full h-full max-w-6xl max-h-[86vh] mx-4" onClick={(e) => e.stopPropagation()}>
-            <Image src={fotos[i]} alt={`${p.titulo} — foto ${i + 1} de ${fotos.length}`} fill sizes="100vw" className="object-contain" />
-          </div>
-          <p className="absolute bottom-5 inset-x-0 text-center text-white/70 text-[13px]">{i + 1} / {fotos.length}</p>
+          <p className="absolute bottom-5 inset-x-0 text-center text-white/70 text-[13px] pointer-events-none">{i + 1} / {fotos.length}</p>
         </div>
       )}
     </>

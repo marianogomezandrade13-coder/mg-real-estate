@@ -5,8 +5,9 @@ import Image from "next/image";
 import { toast } from "sonner";
 import { createBrowserClient } from "@supabase/ssr";
 import {
-  Plus, X, Pencil, RotateCcw, Trash2, Loader2, ImagePlus, Globe, EyeOff, ExternalLink, Star, Home, Search,
+  Plus, X, Pencil, RotateCcw, Trash2, Loader2, ImagePlus, Globe, EyeOff, ExternalLink, Star, Home, Search, Sparkles,
 } from "lucide-react";
+import { generarPublicacionIA } from "@/lib/ia-publicacion";
 import { PageHeader } from "@/components/panel/PageHeader";
 import { comprimirImagen } from "@/lib/imagen";
 import { revalidarSitioPublico } from "@/lib/revalidar";
@@ -301,6 +302,25 @@ export default function PropiedadesPage() {
   }, [props, q]);
 
   const precioTxt = (p: Fila) => (!p.precio ? "—" : `${p.moneda === "USD" ? "USD" : "$"} ${p.precio.toLocaleString("es-AR")}${p.operacion === "Alquiler" ? "/mes" : ""}`);
+  const [generandoIA, setGenerandoIA] = useState(false);
+  const generarDescripcion = async () => {
+    if (!form.precio.trim()) { toast.error("Completá al menos el precio (y cuantos más datos cargues, mejor) para que la IA tenga datos."); return; }
+    if (form.descripcion.trim().length > 20 && !window.confirm("Ya hay una descripción escrita. ¿Reemplazarla por una generada con IA?")) return;
+    setGenerandoIA(true);
+    try {
+      const r = await generarPublicacionIA({
+        tipo: form.tipo, operacion: form.operacion, precio: Number(form.precio), moneda: form.moneda,
+        direccion: form.direccion.trim() || null, barrio: form.barrio.trim() || null, ciudad: form.ciudad.trim() || null,
+        ambientes: num(form.ambientes), dormitorios: num(form.dormitorios), banos: num(form.banos), cocheras: num(form.cocheras),
+        m2Cubiertos: num(form.m2_cubiertos), m2Totales: num(form.m2_totales), antiguedad: num(form.antiguedad),
+        amenities: comodidades, descripcion: null,
+      });
+      if (!r.ok) { toast.error(r.error); return; }
+      setForm((f) => ({ ...f, descripcion: r.data.descripcion.slice(0, 3000), titulo: f.titulo.trim() ? f.titulo : r.data.titulo }));
+      toast.success("Descripción generada. Revisala y ajustá lo que quieras antes de guardar.");
+    } catch (e) { toast.error("No se pudo generar: " + (e as Error).message); }
+    finally { setGenerandoIA(false); }
+  };
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const esTitular = useEsTitular();
 
@@ -450,7 +470,14 @@ export default function PropiedadesPage() {
                 ))}
               </div>
 
-              <div><label className={label}>Descripción</label>
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={cn(label, "mb-0")}>Descripción</label>
+                  <button type="button" onClick={generarDescripcion} disabled={generandoIA}
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[12px] font-semibold bg-[#16201B] text-[#D9BC85] hover:bg-[#1F2D26] disabled:opacity-60">
+                    {generandoIA ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}{generandoIA ? "Generando…" : "Generar con IA"}
+                  </button>
+                </div>
                 <textarea value={form.descripcion} onChange={(e) => set("descripcion", e.target.value)} rows={4} maxLength={3000}
                   className="w-full border border-[#E9E4D8] rounded-[9px] px-3 py-2.5 text-[16px] sm:text-[13px] outline-none focus:border-[#8A6529] focus:ring-4 focus:ring-[#8A6529]/15 resize-y"
                   placeholder="Contá lo que hace especial a esta propiedad: distribución, estado, entorno…" /></div>
