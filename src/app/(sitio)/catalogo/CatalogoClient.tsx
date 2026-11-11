@@ -3,7 +3,7 @@
 import { useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { SlidersHorizontal, X, SearchX, MessageCircle, ChevronRight, ChevronDown } from "lucide-react";
+import { SlidersHorizontal, X, SearchX, MessageCircle, ChevronRight, ChevronDown, Bell } from "lucide-react";
 import { PropertyCard } from "@/components/sitio/PropertyCard";
 import { TIPOS_FILTRO, type Operacion, type Propiedad } from "@/lib/propiedades";
 import { BRAND, waLink } from "@/lib/brand";
@@ -31,6 +31,12 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
   const [busqueda, setBusqueda] = useState(sp.get("q") || "");
   const [orden, setOrden] = useState<Orden>("Relevancia");
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  const [dorm, setDorm] = useState("Todos");
+  const [pMin, setPMin] = useState("");
+  const [pMax, setPMax] = useState("");
+  const [cochera, setCochera] = useState(false);
+  const minN = pMin.trim() === "" ? null : Number(pMin);
+  const maxN = pMax.trim() === "" ? null : Number(pMax);
 
   const filtradas = useMemo(() => {
     const b = busqueda.trim().toLowerCase();
@@ -40,6 +46,11 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
       if (ambientes !== "Todos") {
         if (ambientes === "4+" ? p.ambientes < 4 : p.ambientes !== parseInt(ambientes)) return false;
       }
+      if (dorm !== "Todos" && (dorm === "4+" ? p.dormitorios < 4 : p.dormitorios !== parseInt(dorm))) return false;
+      if (cochera && p.cocheras < 1) return false;
+      // El precio se compara tal cual está cargado (USD en ventas, $ en alquileres): se usa junto con el filtro de operación.
+      if (minN != null && !Number.isNaN(minN) && p.precioNum < minN) return false;
+      if (maxN != null && !Number.isNaN(maxN) && p.precioNum > maxN) return false;
       if (b && ![p.titulo, p.ubicacion, p.direccion, p.codigo].some((t) => t.toLowerCase().includes(b))) return false;
       return true;
     });
@@ -53,16 +64,19 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
       : orden === "Más reciente" ? porFecha
       : porFecha
     );
-  }, [propiedades, operacion, tipo, ambientes, busqueda, orden]);
+  }, [propiedades, operacion, tipo, ambientes, busqueda, orden, dorm, cochera, minN, maxN]);
 
   const chips = [
     operacion !== "todas" && { k: "op", l: operacion === "venta" ? "Comprar" : "Alquilar", clear: () => setOperacion("todas") },
     tipo && { k: "tipo", l: TIPOS.find((t) => t.v === tipo)?.l ?? tipo, clear: () => setTipo("") },
     ambientes !== "Todos" && { k: "amb", l: `${ambientes} amb`, clear: () => setAmbientes("Todos") },
+    dorm !== "Todos" && { k: "dorm", l: `${dorm} dorm.`, clear: () => setDorm("Todos") },
+    cochera && { k: "coch", l: "Con cochera", clear: () => setCochera(false) },
+    (pMin.trim() || pMax.trim()) && { k: "precio", l: `Precio ${pMin.trim() ? `desde ${Number(pMin).toLocaleString("es-AR")}` : ""}${pMin.trim() && pMax.trim() ? " " : ""}${pMax.trim() ? `hasta ${Number(pMax).toLocaleString("es-AR")}` : ""}`, clear: () => { setPMin(""); setPMax(""); } },
     busqueda.trim() && { k: "q", l: `“${busqueda.trim()}”`, clear: () => setBusqueda("") },
   ].filter(Boolean) as { k: string; l: string; clear: () => void }[];
 
-  const limpiar = () => { setOperacion("todas"); setTipo(""); setBusqueda(""); setAmbientes("Todos"); };
+  const limpiar = () => { setOperacion("todas"); setTipo(""); setBusqueda(""); setAmbientes("Todos"); setDorm("Todos"); setCochera(false); setPMin(""); setPMax(""); };
 
   return (
     <>
@@ -147,6 +161,33 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
                   </div>
                 </fieldset>
 
+                <fieldset>
+                  <legend className="text-[11px] font-bold text-text-primary uppercase tracking-[0.18em] mb-3">Dormitorios</legend>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {AMBIENTES.map((a) => (
+                      <button key={a} onClick={() => setDorm(a)} aria-pressed={dorm === a}
+                        className={cn("px-3.5 py-2 text-[12px] font-semibold rounded-full border transition-all",
+                          dorm === a ? "bg-forest text-gold-light border-forest" : "bg-white border-border-mid text-text-secondary hover:border-gold hover:text-gold")}>
+                        {a}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <fieldset>
+                  <legend className="text-[11px] font-bold text-text-primary uppercase tracking-[0.18em] mb-3">Precio {operacion === "alquiler" ? "($ por mes)" : operacion === "venta" ? "(USD)" : ""}</legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="number" inputMode="numeric" min="0" value={pMin} onChange={(e) => setPMin(e.target.value)} placeholder="Mínimo" aria-label="Precio mínimo" className={inputCls} />
+                    <input type="number" inputMode="numeric" min="0" value={pMax} onChange={(e) => setPMax(e.target.value)} placeholder="Máximo" aria-label="Precio máximo" className={inputCls} />
+                  </div>
+                  {operacion === "todas" && <p className="mt-2 text-[11px] text-text-muted">Elegí Comprar o Alquilar para comparar en la misma moneda.</p>}
+                </fieldset>
+
+                <label className="flex items-center gap-3 text-[13px] text-text-primary cursor-pointer">
+                  <input type="checkbox" checked={cochera} onChange={(e) => setCochera(e.target.checked)} className="w-4 h-4 accent-[#8A6529]" />
+                  Con cochera
+                </label>
+
                 <button onClick={limpiar} disabled={chips.length === 0}
                   className="w-full py-2 text-[12px] font-bold text-gold hover:text-gold-dark disabled:text-text-dim disabled:cursor-not-allowed transition-colors">
                   Limpiar filtros
@@ -189,6 +230,9 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
                       className="inline-flex items-center gap-2 px-6 py-3 rounded-[12px] border border-gold text-gold text-[14px] font-bold hover:bg-gold-bg transition-colors">
                       <MessageCircle size={16} />Consultar por WhatsApp
                     </a>
+                    <Link href="/contacto?asunto=alerta" className="inline-flex items-center gap-2 px-6 py-3 rounded-[12px] border border-border-mid text-text-primary text-[14px] font-bold hover:bg-app-bg transition-colors">
+                      <Bell size={16} />Avisarme cuando haya algo así
+                    </Link>
                   </div>
                 </div>
               ) : (

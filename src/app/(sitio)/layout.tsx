@@ -29,6 +29,9 @@ export default function SitioLayout({ children }: { children: React.ReactNode })
             <Link href="/catalogo?op=venta" className="block hover:text-white transition-colors">Comprar</Link>
             <Link href="/catalogo?op=alquiler" className="block hover:text-white transition-colors">Alquilar</Link>
             <Link href="/catalogo?tipo=emprendimiento" className="block hover:text-white transition-colors">Emprendimientos</Link>
+            <Link href="/propiedades/casas-en-venta" className="block hover:text-white transition-colors">Casas en venta</Link>
+            <Link href="/propiedades/departamentos-en-alquiler" className="block hover:text-white transition-colors">Departamentos en alquiler</Link>
+            <Link href="/propiedades/lotes-en-venta" className="block hover:text-white transition-colors">Lotes en venta</Link>
             <Link href="/favoritos" className="block hover:text-white transition-colors">Mis favoritos</Link>
           </div>
 
