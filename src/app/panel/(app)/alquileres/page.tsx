@@ -100,8 +100,13 @@ export default function AlquileresPage() {
     if (n.fin < n.inicio) return void toast.error("La fecha de fin no puede ser anterior al inicio");
     const pct = leerPct(n.comisionPct);
     if (pct === undefined) return void toast.error("La comisión debe ser un porcentaje entre 0 y 100");
+    if (saving) return;
     setSaving(true);
     try {
+      // Antes de crear, se consulta la base (la lista en pantalla puede estar vieja): una propiedad no puede tener dos alquileres a la vez.
+      const ya = await sb.from("alquileres").select("id", { count: "exact", head: true }).eq("propiedad_id", n.propiedadId);
+      if (ya.error) throw new Error(ya.error.message);
+      if ((ya.count ?? 0) > 0) throw new Error("Esa propiedad ya tiene un alquiler activo. Recargá la página para ver la lista actualizada.");
       const k = await sb.from("contratos").insert({
         tipo: "alq_viv", propiedad_id: n.propiedadId, parte_a_id: n.propietarioId, parte_b_id: n.inquilinoId, monto: canon, moneda: "ARS",
         indice_ajuste: n.indice, fecha_inicio: n.inicio, fecha_fin: n.fin, estado: "firmado", pdf_url: null,

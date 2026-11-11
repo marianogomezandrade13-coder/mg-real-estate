@@ -4,6 +4,9 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL ? new URL(process.env.
 
 const nextConfig: NextConfig = {
   images: {
+    // Formatos modernos (más livianos que JPEG) y caché larga: cada foto subida tiene su propia URL, no cambia.
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60 * 60 * 24 * 30,
     // Fotos de propiedades: bucket público "propiedades" de Supabase Storage
     remotePatterns: supabaseHost
       ? [{ protocol: "https", hostname: supabaseHost, pathname: "/storage/v1/object/public/propiedades/**" }]

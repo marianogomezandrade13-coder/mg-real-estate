@@ -5,7 +5,7 @@ import Image from "next/image";
 import { toast } from "sonner";
 import { createBrowserClient } from "@supabase/ssr";
 import {
-  Plus, X, Pencil, RotateCcw, Trash2, Loader2, ImagePlus, Globe, EyeOff, ExternalLink, Star, Home, Search, Sparkles,
+  Plus, X, Pencil, RotateCcw, Trash2, Loader2, ImagePlus, Globe, EyeOff, ExternalLink, Star, Home, Search, Sparkles, Share2,
 } from "lucide-react";
 import { generarPublicacionIA } from "@/lib/ia-publicacion";
 import { geocodificarZona } from "@/lib/geocodificar";
@@ -15,6 +15,7 @@ import { revalidarSitioPublico } from "@/lib/revalidar";
 import { mapaEmbedUrl, rutaPropiedad, normalizarCodigo } from "@/lib/propiedades";
 import { useEsTitular } from "@/lib/rol-context";
 import { cn } from "@/lib/utils";
+import { formatPrecio } from "@/lib/propiedades";
 import type { Database } from "@/types/database";
 
 type Fila = Database["public"]["Tables"]["propiedades"]["Row"];
@@ -104,8 +105,9 @@ export default function PropiedadesPage() {
 
   // Propiedades cargadas antes de existir el mapa: se ubican solas, de a una (límite del servicio de mapas).
   const ubicando = useRef(false);
+  const puedeEditar = useEsTitular();
   useEffect(() => {
-    if (ubicando.current) return;
+    if (ubicando.current || !puedeEditar) return; // solo el titular puede guardar cambios en propiedades
     const pendientes = props.filter((p) => p.lat == null && (p.barrio || p.ciudad));
     if (pendientes.length === 0) return;
     ubicando.current = true;
@@ -121,7 +123,7 @@ export default function PropiedadesPage() {
       }
       if (hechas > 0) { void revalidarSitioPublico().catch(() => {}); toast.success(`${hechas} ${hechas === 1 ? "propiedad ubicada" : "propiedades ubicadas"} en el mapa del sitio`); }
     })();
-  }, [props]);
+  }, [props, puedeEditar]);
 
   const reintentar = () => { setLoading(true); void cargar(); };
   const actualizarSitio = () => { void revalidarSitioPublico().catch(() => {}); };
@@ -610,10 +612,27 @@ function Acciones({ p, onEditar, onEstado, onEliminar }: { p: Fila; onEditar: ()
   const verEnSitio = p.publicada_web && p.estado === "Activa" && (
     <a href={rutaPropiedad(p.codigo)} target="_blank" rel="noopener noreferrer" className={btn} title="Ver en el sitio" aria-label={`Ver ${p.codigo} en el sitio`}><ExternalLink size={14} /></a>
   );
-  if (!esTitular) return <>{verEnSitio}</>;
+  const copiarResumen = async () => {
+    const dato = (n: number | null, t: string) => (n ? `${n} ${t}` : "");
+    const lineas = [
+      `🏡 *${p.titulo}* (${p.codigo})`,
+      `💰 ${formatPrecio(p.precio, p.moneda, p.operacion === "Alquiler" ? "alquiler" : "venta")}`,
+      `📍 ${[p.barrio, p.ciudad].filter(Boolean).join(", ") || "Mendoza"}`,
+      [dato(p.dormitorios, "dorm."), dato(p.banos, "baños"), p.m2_cubiertos ? `${p.m2_cubiertos} m² cubiertos` : "", p.m2_totales ? `${p.m2_totales} m² totales` : ""].filter(Boolean).join(" · "),
+      "",
+      `Ver fotos y detalles: ${window.location.origin}${rutaPropiedad(p.codigo)}`,
+    ].filter((l, i, a) => l !== "" || (i > 0 && a[i - 1] !== ""));
+    try { await navigator.clipboard.writeText(lineas.join("\n")); toast.success("Resumen copiado: pegalo en WhatsApp"); }
+    catch { toast.error("No se pudo copiar. Probá desde un navegador actualizado."); }
+  };
+  const compartir = p.publicada_web && p.estado === "Activa" && (
+    <button onClick={copiarResumen} className={btn} title="Copiar resumen para WhatsApp" aria-label={`Copiar resumen de ${p.codigo}`}><Share2 size={14} /></button>
+  );
+  if (!esTitular) return <>{compartir}{verEnSitio}</>;
   return (
     <>
       <button onClick={onEditar} className={btn} title="Editar" aria-label={`Editar ${p.codigo}`}><Pencil size={14} /></button>
+      {compartir}
       {verEnSitio}
       {p.estado === "Activa" && (
         <button onClick={() => onEstado(p, p.operacion === "Venta" ? "Vendida" : "Alquilada")}
