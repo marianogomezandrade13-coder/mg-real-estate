@@ -39,6 +39,7 @@ export default function SitioLayout({ children }: { children: React.ReactNode })
             <p className="text-gold-light text-[11px] font-bold tracking-[0.2em] uppercase mb-4">Empresa</p>
             <Link href="/contacto#tasacion" className="block hover:text-white transition-colors">Tasaciones</Link>
             <Link href="/contacto" className="block hover:text-white transition-colors">Contacto</Link>
+            <Link href="/preguntas-frecuentes" className="block hover:text-white transition-colors">Preguntas frecuentes</Link>
             <Link href="/portal" className="block hover:text-white transition-colors">Portal de clientes</Link>
           </div>
 

@@ -67,3 +67,26 @@ export async function registrarConsultaWeb(c: ConsultaWeb): Promise<{ ok: true }
     return { ok: false, error: "No pudimos registrar tu consulta. Probá de nuevo o escribinos por WhatsApp." };
   }
 }
+
+/**
+ * Anota en el CRM que alguien tocó "Consultar por WhatsApp" / "Agendar visita" en una ficha, para saber qué propiedad
+ * genera interés (el mensaje en sí llega por WhatsApp). No guarda datos personales. Tope por hora para que un bot no llene el CRM.
+ */
+export async function registrarInteresPropiedad(codigo: string, via: "consulta" | "visita"): Promise<void> {
+  try {
+    const cod = String(codigo).slice(0, 60);
+    const db = createAdminClient();
+    const { data: prop } = await db.from("propiedades").select("id,titulo,codigo").eq("codigo", cod).eq("publicada_web", true).maybeSingle();
+    if (!prop) return;
+    const desde = new Date(Date.now() - 3600_000).toISOString();
+    const { count } = await db.from("leads").select("id", { count: "exact", head: true })
+      .eq("propiedad_id", prop.id).eq("origen", "WhatsApp").gte("created_at", desde);
+    if ((count ?? 0) >= 8) return;
+    const { data: suc } = await db.from("sucursales").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
+    await db.from("leads").insert({
+      sucursal_id: suc?.id ?? null, cliente_id: null, nombre: `Consulta por WhatsApp (${prop.codigo})`,
+      interes: `${via === "visita" ? "Quiere agendar visita" : "Consulta"} desde la web: ${prop.titulo}`,
+      propiedad_id: prop.id, valor_estimado: null, origen: "WhatsApp", etapa: "nuevo", asignado_a: null,
+    });
+  } catch { /* es una métrica: nunca debe romper el botón */ }
+}

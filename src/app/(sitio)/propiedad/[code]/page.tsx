@@ -8,6 +8,7 @@ import { Galeria } from "@/components/sitio/Galeria";
 import { PropertyCard } from "@/components/sitio/PropertyCard";
 import { FavButton } from "@/components/sitio/FavButton";
 import { ShareButton } from "@/components/sitio/ShareButton";
+import { LinkConsulta } from "@/components/sitio/LinkConsulta";
 import { similares, mapaEmbedUrl, codigoDesdeRuta } from "@/lib/propiedades";
 import { listarPublicadas } from "@/lib/propiedades-db";
 import { BRAND, waLink } from "@/lib/brand";
@@ -92,10 +93,10 @@ export default async function PropiedadDetallePage({ params }: Params) {
               </div>
               {/* CTA rápida en móvil (la barra lateral queda al final) */}
               <div className="lg:hidden mt-6 grid grid-cols-2 gap-3">
-                <a href={waConsulta} target="_blank" rel="noopener noreferrer"
+                <LinkConsulta codigo={p.codigo} via="consulta" href={waConsulta}
                   className="flex items-center justify-center gap-2 py-3.5 bg-whatsapp text-forest font-bold rounded-[12px]">
                   <MessageCircle size={17} />WhatsApp
-                </a>
+                </LinkConsulta>
                 <a href={`tel:+${BRAND.whatsapp}`} className="flex items-center justify-center gap-2 py-3.5 border border-border-mid bg-white text-text-primary font-semibold rounded-[12px]">
                   <Phone size={16} />Llamar
                 </a>
@@ -164,14 +165,14 @@ export default async function PropiedadDetallePage({ params }: Params) {
               <p className="text-[12px] text-text-muted mt-1">Código <span className="font-mono font-bold text-text-primary">{p.codigo}</span></p>
 
               <div className="mt-6 space-y-3">
-                <a href={waConsulta} target="_blank" rel="noopener noreferrer"
+                <LinkConsulta codigo={p.codigo} via="consulta" href={waConsulta}
                   className="flex items-center justify-center gap-2 w-full py-3.5 bg-whatsapp text-forest font-bold rounded-[12px] hover:brightness-95 transition">
                   <MessageCircle size={18} />Consultar por WhatsApp
-                </a>
-                <a href={waVisita} target="_blank" rel="noopener noreferrer"
+                </LinkConsulta>
+                <LinkConsulta codigo={p.codigo} via="visita" href={waVisita}
                   className="flex items-center justify-center gap-2 w-full py-3.5 bg-forest text-gold-light font-bold text-[14px] rounded-[12px] hover:bg-forest-3 transition-colors">
                   <CalendarCheck size={17} />Agendar visita
-                </a>
+                </LinkConsulta>
                 <a href={`tel:+${BRAND.whatsapp}`}
                   className="flex items-center justify-center gap-2 w-full py-3.5 border border-border-mid text-text-primary font-semibold text-[14px] rounded-[12px] hover:bg-app-bg transition-colors">
                   <Phone size={16} />Llamar
