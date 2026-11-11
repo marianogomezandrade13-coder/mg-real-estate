@@ -3,12 +3,16 @@
 import { useMemo, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { SlidersHorizontal, X, SearchX, MessageCircle, ChevronRight, ChevronDown, Bell } from "lucide-react";
+import dynamic from "next/dynamic";
+import { SlidersHorizontal, X, SearchX, MessageCircle, ChevronRight, ChevronDown, Bell, LayoutGrid, Map as MapIcon } from "lucide-react";
 import { PropertyCard } from "@/components/sitio/PropertyCard";
 import { TIPOS_FILTRO, type Operacion, type Propiedad } from "@/lib/propiedades";
 import { BRAND, waLink } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
+const MapaPropiedades = dynamic(() => import("@/components/sitio/MapaPropiedades"), {
+  ssr: false, loading: () => <div className="h-[520px] lg:h-[640px] rounded-[20px] bg-white border border-border-light grid place-items-center text-[13px] text-text-muted">Cargando mapa…</div>,
+});
 const TIPOS = TIPOS_FILTRO;
 // "emprendimiento" (menú) equivale a lotes/loteos en el catálogo actual
 const TIPO_DESDE_URL: Record<string, string> = { emprendimiento: "lote" };
@@ -35,6 +39,7 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
   const [pMin, setPMin] = useState("");
   const [pMax, setPMax] = useState("");
   const [cochera, setCochera] = useState(false);
+  const [vista, setVista] = useState<"lista" | "mapa">("lista");
   const minN = pMin.trim() === "" ? null : Number(pMin);
   const maxN = pMax.trim() === "" ? null : Number(pMax);
 
@@ -206,7 +211,15 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
                     </button>
                   ))}
                 </div>
-                <label className="flex items-center gap-2.5 text-[13px] text-text-muted ml-auto">
+                <div className="inline-flex rounded-[10px] border border-border-mid bg-white p-0.5 ml-auto" role="group" aria-label="Tipo de vista">
+                  {([["lista", "Lista", LayoutGrid], ["mapa", "Mapa", MapIcon]] as const).map(([v, l, Ic]) => (
+                    <button key={v} onClick={() => setVista(v)} aria-pressed={vista === v}
+                      className={cn("inline-flex items-center gap-1.5 h-9 px-3 rounded-[8px] text-[12px] font-semibold transition-colors", vista === v ? "bg-forest text-gold-light" : "text-text-secondary hover:text-forest")}>
+                      <Ic size={14} />{l}
+                    </button>
+                  ))}
+                </div>
+                <label className="flex items-center gap-2.5 text-[13px] text-text-muted">
                   Ordenar por
                   <select value={orden} onChange={(e) => setOrden(e.target.value as Orden)}
                     className="h-10 bg-white border border-border-mid rounded-[10px] px-3 text-[13px] text-text-primary outline-none focus:border-gold focus:ring-4 focus:ring-gold/15">
@@ -235,6 +248,13 @@ function CatalogoContent({ propiedades }: { propiedades: Propiedad[] }) {
                     </Link>
                   </div>
                 </div>
+              ) : vista === "mapa" ? (
+                <>
+                  <MapaPropiedades propiedades={filtradas} />
+                  <p className="mt-3 text-[12px] text-text-muted">
+                    Ubicación aproximada de cada zona. {filtradas.filter((p) => !p.coords).length > 0 && `${filtradas.filter((p) => !p.coords).length} propiedad(es) sin ubicación se ven en la vista Lista.`}
+                  </p>
+                </>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                   {filtradas.map((p, i) => <PropertyCard key={p.codigo} p={p} index={i} />)}

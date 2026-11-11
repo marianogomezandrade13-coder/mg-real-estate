@@ -8,6 +8,7 @@ import {
   Plus, X, Pencil, RotateCcw, Trash2, Loader2, ImagePlus, Globe, EyeOff, ExternalLink, Star, Home, Search, Sparkles,
 } from "lucide-react";
 import { generarPublicacionIA } from "@/lib/ia-publicacion";
+import { geocodificarZona } from "@/lib/geocodificar";
 import { PageHeader } from "@/components/panel/PageHeader";
 import { comprimirImagen } from "@/lib/imagen";
 import { revalidarSitioPublico } from "@/lib/revalidar";
@@ -100,6 +101,27 @@ export default function PropiedadesPage() {
   }, []);
 
   useEffect(() => { const t = setTimeout(() => void cargar(), 0); return () => clearTimeout(t); }, [cargar]);
+
+  // Propiedades cargadas antes de existir el mapa: se ubican solas, de a una (límite del servicio de mapas).
+  const ubicando = useRef(false);
+  useEffect(() => {
+    if (ubicando.current) return;
+    const pendientes = props.filter((p) => p.lat == null && (p.barrio || p.ciudad));
+    if (pendientes.length === 0) return;
+    ubicando.current = true;
+    (async () => {
+      let hechas = 0;
+      for (const p of pendientes) {
+        const c = await geocodificarZona(p.barrio, p.ciudad);
+        if (c) {
+          const { error } = await supabase.from("propiedades").update({ lat: c.lat, lng: c.lng }).eq("id", p.id);
+          if (!error) { hechas++; setProps((ps) => ps.map((x) => (x.id === p.id ? { ...x, lat: c.lat, lng: c.lng } : x))); }
+        }
+        await new Promise((ok) => setTimeout(ok, 1100));
+      }
+      if (hechas > 0) { void revalidarSitioPublico().catch(() => {}); toast.success(`${hechas} ${hechas === 1 ? "propiedad ubicada" : "propiedades ubicadas"} en el mapa del sitio`); }
+    })();
+  }, [props]);
 
   const reintentar = () => { setLoading(true); void cargar(); };
   const actualizarSitio = () => { void revalidarSitioPublico().catch(() => {}); };
@@ -210,7 +232,12 @@ export default function PropiedadesPage() {
     setSaving(true);
     try {
       const editar = modal?.editar ?? null;
+      // Ubicación en el mapa del sitio: se recalcula solo si cambió el barrio o la ciudad.
+      const zonaIgual = !!editar && (editar.barrio ?? "") === form.barrio.trim() && (editar.ciudad ?? "") === form.ciudad.trim();
+      const coords = zonaIgual && editar!.lat != null && editar!.lng != null ? { lat: editar!.lat, lng: editar!.lng }
+        : await geocodificarZona(form.barrio.trim() || null, form.ciudad.trim() || null);
       const datos = {
+        lat: coords?.lat ?? null, lng: coords?.lng ?? null,
         titulo: form.titulo.trim(), tipo: form.tipo, operacion: form.operacion, estado: form.estado, moneda: form.moneda,
         precio: precio ?? 0, direccion: form.direccion.trim() || null, barrio: form.barrio.trim() || null, ciudad: form.ciudad.trim() || null,
         provincia: "Mendoza", ambientes: int(form.ambientes), dormitorios: int(form.dormitorios), banos: int(form.banos), cocheras: int(form.cocheras),
@@ -236,7 +263,7 @@ export default function PropiedadesPage() {
       } else {
         codigo = codigoForm || (await siguienteCodigo());
         const base = {
-          ...datos, codigo, sucursal_id: null, lat: null, lng: null, estado_conservacion: null, patio: null,
+          ...datos, codigo, sucursal_id: null, estado_conservacion: null, patio: null,
         };
         let res = await supabase.from("propiedades").insert(base).select("id").single();
         if (res.error?.code === "23505" && !codigoForm) { // código repetido: se recalcula una vez

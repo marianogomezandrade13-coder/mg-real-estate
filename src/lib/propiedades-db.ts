@@ -11,6 +11,14 @@ const publico = () =>
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+/** Desplazamiento estable (≈ hasta 400 m) según el código: evita que varios pines de la misma zona se tapen y no revela la dirección. */
+function coordsAprox(f: Fila) {
+  if (f.lat == null || f.lng == null) return undefined;
+  const h = [...f.codigo].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 11);
+  const dx = (((h % 1000) / 1000) - 0.5) * 0.008, dy = ((((h >>> 10) % 1000) / 1000) - 0.5) * 0.008;
+  return { lat: f.lat + dy, lng: f.lng + dx };
+}
+
 function aPropiedad(f: Fila, fotos: string[]): Propiedad {
   const serv = (f.servicios ?? {}) as { amenities?: unknown };
   const extras = Array.isArray(serv.amenities) ? serv.amenities.filter((x): x is string => typeof x === "string") : [];
@@ -41,6 +49,7 @@ function aPropiedad(f: Fila, fotos: string[]): Propiedad {
     fotos,
     tono: tonoPara(f.codigo),
     publicada: f.created_at,
+    coords: coordsAprox(f),
   };
 }
 

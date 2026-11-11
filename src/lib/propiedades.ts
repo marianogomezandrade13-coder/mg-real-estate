@@ -35,6 +35,8 @@ export type Propiedad = {
   tono: string;
   /** Fecha de carga ISO, para "Más reciente" */
   publicada: string;
+  /** Ubicación APROXIMADA para el mapa (centro de la zona + desplazamiento), nunca la dirección exacta */
+  coords?: { lat: number; lng: number };
 };
 
 /** Valor de la columna `tipo` de la base → tipo del sitio */
